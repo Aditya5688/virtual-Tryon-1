@@ -10,27 +10,44 @@ import { GoogleGenAI, Modality } from "@google/genai";
 type Page = 'home' | 'creator' | 'result' | 'loading' | 'profile';
 type ImageFile = { b64: string; mimeType: string; };
 type Pose = 'Standing Straight' | 'Slight 3/4 Turn' | 'Hands on Hips' | 'Walking Motion';
+type BodyType = 'Rectangle' | 'Triangle' | 'Inverted Triangle' | 'Hourglass' | 'Round';
+
+type BodyScan = {
+    front: ImageFile | null;
+    side: ImageFile | null;
+    back: ImageFile | null;
+};
+
 type SavedOutfit = {
     id: string;
     name: string;
     image: string; // data URL
 };
+
 type Profile = {
     name: string;
-    photos: ImageFile[];
+    bodyScans: BodyScan;
     height: string;
     weight: string;
+    bodyType?: BodyType;
+    chest?: string;
+    waist?: string;
+    hips?: string;
     savedOutfits: SavedOutfit[];
 };
 
-// Camera Capture Component
-const CameraCapture = ({ onCapture, onClose, setError }: {
-    onCapture: (file: ImageFile) => void;
+// Guided Body Scan Capture Component
+type BodyScanStep = 'front' | 'side' | 'back';
+const BodyScanCapture = ({ onComplete, onClose, setError }: {
+    onComplete: (scans: BodyScan) => void;
     onClose: () => void;
     setError: (error: string | null) => void;
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const [step, setStep] = useState<BodyScanStep>('front');
+    const [images, setImages] = useState<BodyScan>({ front: null, side: null, back: null });
+    const [preview, setPreview] = useState<string | null>(null); // dataURL for preview
 
     useEffect(() => {
         const startCamera = async () => {
@@ -55,6 +72,12 @@ const CameraCapture = ({ onCapture, onClose, setError }: {
         };
     }, [onClose, setError]);
 
+    const instructions: Record<BodyScanStep, { title: string; guide: string; }> = {
+        front: { title: "Step 1/3: Front View", guide: "Stand straight, facing the camera." },
+        side: { title: "Step 2/3: Side View", guide: "Turn 90 degrees to your side." },
+        back: { title: "Step 3/3: Back View", guide: "Turn around, facing away from the camera." },
+    };
+
     const handleCapture = () => {
         if (!videoRef.current) return;
         const canvas = document.createElement('canvas');
@@ -64,19 +87,54 @@ const CameraCapture = ({ onCapture, onClose, setError }: {
         if (context) {
             context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
             const dataUrl = canvas.toDataURL('image/jpeg');
-            const base64 = dataUrl.split(',')[1];
-            onCapture({ b64: base64, mimeType: 'image/jpeg' });
+            setPreview(dataUrl);
         }
-        onClose();
+    };
+
+    const handleRetake = () => {
+        setPreview(null);
+    };
+
+    const handleConfirm = () => {
+        if (!preview) return;
+        const base64 = preview.split(',')[1];
+        const newImages = { ...images, [step]: { b64: base64, mimeType: 'image/jpeg' } };
+        setImages(newImages);
+        setPreview(null);
+        
+        if (step === 'front') {
+            setStep('side');
+        } else if (step === 'side') {
+            setStep('back');
+        } else if (step === 'back') {
+            onComplete(newImages);
+            onClose();
+        }
     };
 
     return (
         <div className="camera-modal-overlay" onClick={onClose}>
-            <div className="camera-modal-content" onClick={(e) => e.stopPropagation()}>
-                <video ref={videoRef} autoPlay playsInline className="camera-video-feed"></video>
-                <button className="capture-button" onClick={handleCapture} aria-label="Take Photo">
-                    <i className="material-icons">camera</i>
-                </button>
+            <div className="camera-modal-content body-scan-modal" onClick={(e) => e.stopPropagation()}>
+                {preview ? (
+                    <div className="scan-preview">
+                        <img src={preview} alt={`${step} preview`} />
+                        <div className="preview-controls">
+                            <button onClick={handleRetake} className="secondary-button">Retake</button>
+                            <button onClick={handleConfirm} className="primary-button">Confirm</button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <video ref={videoRef} autoPlay playsInline className="camera-video-feed"></video>
+                        <div className="scan-instructions">
+                            <h3>{instructions[step].title}</h3>
+                            <p>{instructions[step].guide}</p>
+                        </div>
+                        <button className="capture-button" onClick={handleCapture} aria-label={`Capture ${step} view`}>
+                            <i className="material-icons">camera</i>
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
@@ -128,61 +186,6 @@ const ImageUploader = ({ onImageUpload, image, title, description, id, setError 
     );
 };
 
-// Helper for multi-image upload
-const MultiImageUploader = ({ onImagesUpload, images, setError, onTakePhoto }: {
-    onImagesUpload: (data: ImageFile[]) => void;
-    images: ImageFile[];
-    setError: (error: string | null) => void;
-    onTakePhoto: () => void;
-}) => {
-    const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-        event.preventDefault();
-        setError(null);
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            const file = files[0];
-            if (!file.type.startsWith('image/')) {
-                setError('Invalid file type. Please upload an image.');
-                return;
-            }
-            if (images.length >= 3) {
-                setError('You can upload a maximum of 3 photos.');
-                return;
-            }
-            const base64 = await fileToBase64(file);
-            onImagesUpload([...images, { b64: base64, mimeType: file.type }]);
-        }
-    }, [images, onImagesUpload, setError]);
-
-    const handleRemoveImage = (indexToRemove: number) => {
-        onImagesUpload(images.filter((_, index) => index !== indexToRemove));
-    };
-
-    return (
-        <>
-            <input type="file" id="person-multi-upload" style={{ display: 'none' }} onChange={handleFileChange} accept="image/*" multiple={false} />
-            <div className="multi-upload-grid">
-                {images.map((img, index) => (
-                    <div key={index} className="image-thumbnail">
-                        <img src={`data:${img.mimeType};base64,${img.b64}`} alt={`Person reference ${index + 1}`} />
-                        <button className="remove-image-button" onClick={() => handleRemoveImage(index)} aria-label={`Remove image ${index + 1}`}>&times;</button>
-                    </div>
-                ))}
-                {images.length < 3 && (
-                    <div className="uploader-actions">
-                         <label htmlFor="person-multi-upload" className="add-image-box">
-                            <i className="material-icons">add_photo_alternate</i>
-                        </label>
-                        <button onClick={onTakePhoto} className="add-image-box camera-button" aria-label="Take a photo">
-                             <i className="material-icons">photo_camera</i>
-                        </button>
-                    </div>
-                )}
-            </div>
-        </>
-    );
-};
-
 // Helper to convert file to base64
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -198,33 +201,44 @@ const ProfilePage = ({ profile, onSave, setPage }: {
     setPage: (page: Page) => void;
 }) => {
     const [name, setName] = useState(profile?.name || '');
-    const [photos, setPhotos] = useState<ImageFile[]>(profile?.photos || []);
+    const [bodyScans, setBodyScans] = useState<BodyScan>(profile?.bodyScans || { front: null, side: null, back: null });
     const [height, setHeight] = useState(profile?.height || '');
     const [weight, setWeight] = useState(profile?.weight || '');
+    const [bodyType, setBodyType] = useState<BodyType | undefined>(profile?.bodyType);
+    const [chest, setChest] = useState(profile?.chest || '');
+    const [waist, setWaist] = useState(profile?.waist || '');
+    const [hips, setHips] = useState(profile?.hips || '');
     const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>(profile?.savedOutfits || []);
     const [localError, setLocalError] = useState<string | null>(null);
-    const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
 
     const handleSave = () => {
-        if (!name || photos.length === 0 || !height || !weight) {
-            setLocalError('Please fill out all fields and upload at least one photo.');
+        if (!name || !bodyScans.front || !bodyScans.side || !bodyScans.back || !height || !weight) {
+            setLocalError('Please complete your name, measurements, and the 3-angle body scan.');
             return;
         }
-        onSave({ name, photos, height, weight, savedOutfits });
+        onSave({ name, bodyScans, height, weight, bodyType, chest, waist, hips, savedOutfits });
+        setPage('creator');
     };
 
-    const handleCapture = (newPhoto: ImageFile) => {
-        if (photos.length < 3) {
-            setPhotos([...photos, newPhoto]);
-        } else {
-            setLocalError('You can upload a maximum of 3 photos.');
-        }
+    const handleScanComplete = (scans: BodyScan) => {
+        setBodyScans(scans);
+        setIsScanning(false);
     };
     
     const handleDeleteOutfit = (idToDelete: string) => {
-        setSavedOutfits(savedOutfits.filter(outfit => outfit.id !== idToDelete));
+        const updatedOutfits = savedOutfits.filter(outfit => outfit.id !== idToDelete);
+        setSavedOutfits(updatedOutfits);
+        onSave({ name, bodyScans, height, weight, bodyType, chest, waist, hips, savedOutfits: updatedOutfits });
     };
-
+    
+    const bodyTypes: { name: BodyType, icon: string }[] = [
+        { name: 'Rectangle', icon: 'crop_portrait' },
+        { name: 'Triangle', icon: 'change_history' },
+        { name: 'Inverted Triangle', icon: 'change_history' },
+        { name: 'Hourglass', icon: 'hourglass_empty' },
+        { name: 'Round', icon: 'circle' }
+    ];
 
     return (
         <div className="page-container profile-page">
@@ -241,24 +255,74 @@ const ProfilePage = ({ profile, onSave, setPage }: {
             </div>
 
             <div className="step-card">
-                <h3>Your Photos & Details</h3>
-                <p className="description" style={{ color: 'var(--secondary-text)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1rem' }}>Add up to 3 photos for best results.</p>
-                <MultiImageUploader images={photos} onImagesUpload={setPhotos} setError={setLocalError} onTakePhoto={() => setIsCameraOpen(true)} />
+                <h3>Your Body Scan</h3>
+                <p className="description" style={{ color: 'var(--secondary-text)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1rem' }}>A 3-angle scan helps the AI create a perfect fit.</p>
+                <div className="body-scan-section">
+                    {(['front', 'side', 'back'] as const).map(view => (
+                        <div className="scan-slot" key={view}>
+                            {bodyScans[view] ? (
+                                <img src={`data:${bodyScans[view]!.mimeType};base64,${bodyScans[view]!.b64}`} alt={`${view} view`} />
+                            ) : (
+                                <div className="placeholder">
+                                    <i className="material-icons">person_search</i>
+                                </div>
+                            )}
+                            <div className="scan-slot-label">{view.charAt(0).toUpperCase() + view.slice(1)} View</div>
+                        </div>
+                    ))}
+                </div>
+                <button className="primary-button full-width" onClick={() => setIsScanning(true)}>
+                    <i className="material-icons">camera_alt</i>
+                    {bodyScans.front ? 'Redo Body Scan' : 'Start Body Scan'}
+                </button>
+            </div>
+            
+             <div className="step-card">
+                <h3>Body Shape & Measurements</h3>
+                <p className="description" style={{ color: 'var(--secondary-text)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1rem' }}>Providing these details helps the AI create a more accurate fit.</p>
+                
+                 <h4>Body Type</h4>
+                <div className="body-type-selector">
+                    {bodyTypes.map(({ name, icon }) => (
+                        <button 
+                            key={name}
+                            className={`body-type-button ${bodyType === name ? 'active' : ''} ${name === 'Inverted Triangle' ? 'inverted' : ''}`}
+                            onClick={() => setBodyType(name)}
+                            aria-pressed={bodyType === name}
+                        >
+                            <i className="material-icons">{icon}</i>
+                            <span>{name}</span>
+                        </button>
+                    ))}
+                </div>
+                 
                 <div className="details-inputs">
                     <div className="input-group">
-                        <label htmlFor="height">Height (feet)</label>
+                        <label htmlFor="height">Height (ft)</label>
                         <input id="height" type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="e.g., 5.8" aria-label="Height in feet" />
                     </div>
                     <div className="input-group">
                         <label htmlFor="weight">Weight (kg)</label>
                         <input id="weight" type="number" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="e.g., 70" aria-label="Weight in kilograms" />
                     </div>
+                     <div className="input-group">
+                        <label htmlFor="chest">Chest (in)</label>
+                        <input id="chest" type="number" value={chest} onChange={(e) => setChest(e.target.value)} placeholder="Optional" aria-label="Chest in inches" />
+                    </div>
+                    <div className="input-group">
+                        <label htmlFor="waist">Waist (in)</label>
+                        <input id="waist" type="number" value={waist} onChange={(e) => setWaist(e.target.value)} placeholder="Optional" aria-label="Waist in inches" />
+                    </div>
+                    <div className="input-group">
+                        <label htmlFor="hips">Hips (in)</label>
+                        <input id="hips" type="number" value={hips} onChange={(e) => setHips(e.target.value)} placeholder="Optional" aria-label="Hips in inches" />
+                    </div>
                 </div>
             </div>
 
             {savedOutfits.length > 0 && (
                 <div className="step-card">
-                    <h3>Saved Outfits</h3>
+                    <h3>My Lookbook</h3>
                     <div className="saved-outfits-grid">
                         {savedOutfits.map(outfit => (
                             <div key={outfit.id} className="image-thumbnail saved-outfit-thumbnail">
@@ -273,19 +337,33 @@ const ProfilePage = ({ profile, onSave, setPage }: {
 
             {localError && <div className="error-message" role="alert">{localError}</div>}
 
-             {isCameraOpen && <CameraCapture onCapture={handleCapture} onClose={() => setIsCameraOpen(false)} setError={setLocalError} />}
+             {isScanning && <BodyScanCapture onComplete={handleScanComplete} onClose={() => setIsScanning(false)} setError={setLocalError} />}
 
             <div className="action-panel">
-                <button className="primary-button" onClick={handleSave}>Save Profile</button>
-                {profile && <button className="secondary-button" onClick={() => setPage('creator')}>Cancel</button>}
+                <button className="primary-button" onClick={handleSave}>Save Profile & Continue</button>
             </div>
         </div>
+    );
+};
+
+const Header = ({ page, setPage }: { page: Page, setPage: (page: Page) => void }) => {
+    if (page === 'loading') return null;
+    return (
+        <header className="app-header">
+            <h1 className="app-logo" onClick={() => setPage('home')}>AI Fashion Studio</h1>
+            <div className="header-nav">
+                <button onClick={() => setPage('profile')} aria-label="Manage Profile">
+                    <i className="material-icons">account_circle</i>
+                </button>
+            </div>
+        </header>
     );
 };
 
 
 const App = () => {
     const [page, setPage] = useState<Page>('loading');
+    const [pageKey, setPageKey] = useState(Date.now()); // Used to force re-render for animations
     const [profile, setProfile] = useState<Profile | null>(null);
     const [clothingImage, setClothingImage] = useState<ImageFile | null>(null);
     const [selectedPose, setSelectedPose] = useState<Pose>('Standing Straight');
@@ -294,26 +372,63 @@ const App = () => {
     const [isSavingOutfit, setIsSavingOutfit] = useState(false);
     const [newOutfitName, setNewOutfitName] = useState("");
     const [isOutfitSaved, setIsOutfitSaved] = useState(false);
+
+    const loadingTips = useMemo(() => [
+        "Analyzing fabric textures...",
+        "Simulating realistic drape & flow...",
+        "Matching lighting conditions...",
+        "Constructing a 3D model from your scan...",
+        "Applying clothing to your digital twin...",
+        "Rendering the final, photorealistic image..."
+    ], []);
+    const [tip, setTip] = useState(loadingTips[0]);
     
+    useEffect(() => {
+        if (page === 'loading') {
+            const interval = setInterval(() => {
+                setTip(prevTip => {
+                    const currentIndex = loadingTips.indexOf(prevTip);
+                    const nextIndex = (currentIndex + 1) % loadingTips.length;
+                    return loadingTips[nextIndex];
+                });
+            }, 2500);
+            return () => clearInterval(interval);
+        }
+    }, [page, loadingTips]);
+
+    const changePage = (newPage: Page) => {
+        setPageKey(Date.now());
+        setPage(newPage);
+    };
+
     useEffect(() => {
         const savedProfileJSON = localStorage.getItem('userProfile');
         if (savedProfileJSON) {
             const savedProfile = JSON.parse(savedProfileJSON);
-            // Backwards compatibility for profiles without savedOutfits
+            if (savedProfile.photos) {
+                savedProfile.bodyScans = {
+                    front: savedProfile.photos[0] || null,
+                    side: savedProfile.photos[1] || null,
+                    back: savedProfile.photos[2] || null,
+                };
+                delete savedProfile.photos;
+            }
+            if (!savedProfile.bodyScans) {
+                savedProfile.bodyScans = { front: null, side: null, back: null };
+            }
             if (!savedProfile.savedOutfits) {
                 savedProfile.savedOutfits = [];
             }
             setProfile(savedProfile);
-            setPage('home');
+            changePage('home');
         } else {
-            setPage('profile');
+            changePage('profile');
         }
     }, []);
 
     const handleSaveProfile = (newProfile: Profile) => {
         setProfile(newProfile);
         localStorage.setItem('userProfile', JSON.stringify(newProfile));
-        setPage('creator');
     };
 
     const handleGenerate = useCallback(async () => {
@@ -322,26 +437,47 @@ const App = () => {
             return;
         }
 
-        setPage('loading');
+        if (!profile.bodyScans.front || !profile.bodyScans.side || !profile.bodyScans.back) {
+            setError("Please complete the 3-angle body scan in your profile for best results.");
+            changePage('profile');
+            return;
+        }
+
+        changePage('loading');
         setError(null);
         setResultImage(null);
         
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
         const clothingPart = { inlineData: { data: clothingImage.b64, mimeType: clothingImage.mimeType } };
-        const personParts = profile.photos.map(img => ({ inlineData: { data: img.b64, mimeType: img.mimeType } }));
+        const personParts = [
+            { inlineData: { data: profile.bodyScans.front.b64, mimeType: profile.bodyScans.front.mimeType } },
+            { inlineData: { data: profile.bodyScans.side.b64, mimeType: profile.bodyScans.side.mimeType } },
+            { inlineData: { data: profile.bodyScans.back.b64, mimeType: profile.bodyScans.back.mimeType } },
+        ];
+        
+        const userProvidedProfile = `
+- Height: ${profile.height} feet
+- Weight: ${profile.weight} kilograms
+${profile.bodyType ? `- Body Type: ${profile.bodyType}` : ''}
+${profile.chest ? `- Chest: ${profile.chest} inches` : ''}
+${profile.waist ? `- Waist: ${profile.waist} inches` : ''}
+${profile.hips ? `- Hips: ${profile.hips} inches` : ''}
+        `.trim();
+        
         const textPart = {
             text: `
 **Primary Goal:** Create a hyper-realistic virtual try-on image by acting as a master digital artist and clothing simulation expert. Follow this strict, multi-step process with absolute precision.
 
-**Step 1 (Highest Priority): Deep Biometric Analysis & Body Profile Creation.**
-Your first and most critical task is to perform a deep analysis of all provided reference photos of ${profile.name}.
-- Analyze their unique body structure: shoulder-to-hip ratio, torso length, limb thickness (arms and legs), posture, and overall body fat distribution.
-- From this analysis, create a detailed "biometric profile" that serves as the blueprint for the next step. This is not a generic assessment; it is a specific analysis of the person in the photos.
+**Step 1 (Highest Priority): Deep Biometric Analysis & 3D Body Profile Creation.**
+Your first and most critical task is to perform a deep analysis of the three provided reference photos of ${profile.name} (front, side, and back views). Cross-reference them with the user-provided body profile below to construct a complete 3D understanding of their physique.
+- **User-Provided Body Profile (Primary Truth):**
+${userProvidedProfile}
+- **Photo Analysis:** Analyze their unique body structure from the three distinct angles: shoulder-to-hip ratio, torso length, limb thickness (arms and legs), posture, body curvature, and overall body fat distribution. The three views are essential to create an accurate 3D model.
 
 **Step 2: Accurate Body Reconstruction.**
 Using the detailed biometric profile from Step 1, reconstruct a photorealistic, full-body model of ${profile.name}.
-- The model's physique **must** be a direct and accurate representation of the visual information from the reference photos, further refined by the provided dimensions: ${profile.height} feet tall and ${profile.weight} kilograms.
+- The model's physique **must** be a direct and accurate representation of the user-provided profile and the 3-angle photo scan.
 - Do not use a generic or idealized body shape. The generated body's proportions and build must perfectly match the analysis from Step 1.
 
 **Step 3: Seamless Facial Integration.**
@@ -374,16 +510,16 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
             const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
             if (imagePart?.inlineData) {
                 setResultImage(`data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`);
-                setPage('result');
+                changePage('result');
             } else {
                 const textResponse = response.text || "No image was generated. The model may have refused the request due to safety policies. Please try a different set of images.";
                 setError(`Failed to generate image. Response: ${textResponse}`);
-                setPage('creator');
+                changePage('creator');
             }
         } catch (e: any) {
             console.error(e);
             setError(e.message || "An unexpected error occurred.");
-            setPage('creator');
+            changePage('creator');
         }
     }, [clothingImage, profile, selectedPose]);
     
@@ -395,7 +531,7 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
         setIsSavingOutfit(false);
         setNewOutfitName("");
         setIsOutfitSaved(false);
-        setPage('home');
+        changePage('creator');
     }, []);
 
     const handleSaveOutfit = () => {
@@ -417,6 +553,8 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
         setIsOutfitSaved(true);
         setIsSavingOutfit(false);
     };
+    
+    const isScanComplete = profile?.bodyScans?.front && profile?.bodyScans?.side && profile?.bodyScans?.back;
 
     const renderPage = () => {
         switch (page) {
@@ -424,53 +562,60 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                 return (
                     <div className="page-container home-page">
                         <i className="material-icons icon">styler</i>
-                        <h1>AI Fashion Studio</h1>
-                        <p>Welcome back, {profile?.name}! Virtually try on any outfit. Upload a photo of the clothing to create your new look.</p>
-                        <button className="primary-button" onClick={() => setPage('creator')}>Get Started</button>
+                        <h1>Welcome back, {profile?.name}!</h1>
+                        <p>Virtually try on any outfit. Upload a photo of the clothing to create your new look.</p>
+                        <div className="home-actions">
+                            <button className="primary-button" onClick={() => changePage('creator')}>Create a New Look</button>
+                            <button className="secondary-button" onClick={() => changePage('profile')}>View My Lookbook</button>
+                        </div>
                     </div>
                 );
             case 'profile':
-                return <ProfilePage profile={profile} onSave={handleSaveProfile} setPage={setPage} />;
+                return <ProfilePage profile={profile} onSave={handleSaveProfile} setPage={changePage} />;
             case 'creator':
                 const poses: Pose[] = ['Standing Straight', 'Slight 3/4 Turn', 'Hands on Hips', 'Walking Motion'];
                 return (
-                    <div className="page-container">
-                        <header className="page-header">
-                            <h2>Create Your Look</h2>
-                            <p>Hello, {profile?.name}! Follow the steps below to generate your image.</p>
-                        </header>
-                         <div className="step-card">
-                            <h3>Profile Summary</h3>
-                            <div className="profile-summary">
-                                <span><i className="material-icons">badge</i> {profile?.name}</span>
-                                <span><i className="material-icons">straighten</i> {profile?.height} ft</span>
-                                <span><i className="material-icons">monitor_weight</i> {profile?.weight} kg</span>
+                    <div className="creator-grid">
+                        <div className="creator-preview-pane">
+                            <div className="avatar-preview">
+                                {profile?.bodyScans.front && (
+                                    <img src={`data:${profile.bodyScans.front.mimeType};base64,${profile.bodyScans.front.b64}`} alt="Your silhouette" />
+                                )}
+                                <div className="avatar-overlay">Your Silhouette</div>
                             </div>
-                            <button className="secondary-button" onClick={() => setPage('profile')}>Manage Profile</button>
                         </div>
-                        <div className="step-card">
-                             <h3>Step 1: Upload Clothing</h3>
-                            <ImageUploader id="clothing-upload" onImageUpload={setClothingImage} image={clothingImage} title="Clothing Item" description="Drop a picture here" setError={setError} />
-                        </div>
-                        <div className="step-card">
-                            <h3>Step 2: Choose a Pose</h3>
-                            <div className="pose-selection-container">
-                                {poses.map(pose => (
-                                    <button
-                                        key={pose}
-                                        className={`pose-button ${selectedPose === pose ? 'active' : ''}`}
-                                        onClick={() => setSelectedPose(pose)}
-                                    >
-                                        {pose}
+                        <div className="creator-controls-pane">
+                            <div className="page-container creator-page">
+                                <header className="page-header">
+                                    <h2>Create Your Look</h2>
+                                    <p>Follow the steps below to generate your image.</p>
+                                </header>
+                                <div className="step-card">
+                                    <h3>Step 1: Upload Clothing</h3>
+                                    <ImageUploader id="clothing-upload" onImageUpload={setClothingImage} image={clothingImage} title="Clothing Item" description="Drop a picture here" setError={setError} />
+                                </div>
+                                <div className="step-card">
+                                    <h3>Step 2: Choose a Pose</h3>
+                                    <div className="pose-selection-container">
+                                        {poses.map(pose => (
+                                            <button
+                                                key={pose}
+                                                className={`pose-button ${selectedPose === pose ? 'active' : ''}`}
+                                                onClick={() => setSelectedPose(pose)}
+                                            >
+                                                {pose}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {error && <div className="error-message" role="alert">{error}</div>}
+                                <div className="action-panel">
+                                    <button className="primary-button generate-button" onClick={handleGenerate} disabled={!clothingImage || !profile}>
+                                        <i className="material-icons">auto_awesome</i>
+                                        Generate
                                     </button>
-                                ))}
+                                </div>
                             </div>
-                        </div>
-                        {error && <div className="error-message" role="alert">{error}</div>}
-                        <div className="action-panel">
-                            <button className="primary-button" onClick={handleGenerate} disabled={!clothingImage || !profile}>
-                                Generate
-                            </button>
                         </div>
                     </div>
                 );
@@ -479,7 +624,7 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                     <div className="page-container loading-section" aria-live="polite">
                         <h2>Crafting Your Look...</h2>
                         <div className="loader"></div>
-                        <p>The AI is building your avatar. This may take a moment.</p>
+                        <p className="loading-tip">{tip}</p>
                     </div>
                 );
             case 'result':
@@ -499,8 +644,10 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                                     aria-label="Outfit name"
                                     autoFocus
                                 />
-                                <button className="primary-button" onClick={handleSaveOutfit} disabled={!newOutfitName.trim()}>Confirm Save</button>
-                                <button className="secondary-button" onClick={() => setIsSavingOutfit(false)}>Cancel</button>
+                                <div className="result-actions">
+                                    <button className="secondary-button" onClick={() => setIsSavingOutfit(false)}>Cancel</button>
+                                    <button className="primary-button" onClick={handleSaveOutfit} disabled={!newOutfitName.trim()}>Confirm Save</button>
+                                </div>
                             </div>
                         ) : (
                             <div className="result-actions">
@@ -511,7 +658,7 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                                     onClick={() => setIsSavingOutfit(true)}
                                     disabled={isOutfitSaved}
                                 >
-                                    {isOutfitSaved ? 'Saved!' : 'Save Outfit'}
+                                    {isOutfitSaved ? 'Saved!' : 'Add to Lookbook'}
                                 </button>
                             </div>
                         )}
@@ -522,7 +669,10 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
     
     return (
         <>
-            {renderPage()}
+            <Header page={page} setPage={changePage} />
+            <main key={pageKey} className="page-transition">
+                {renderPage()}
+            </main>
         </>
     );
 };
