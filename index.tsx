@@ -45,9 +45,11 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const countdownIntervalRef = useRef<number | null>(null);
     const [step, setStep] = useState<BodyScanStep>('front');
     const [images, setImages] = useState<BodyScan>({ front: null, side: null, back: null });
     const [preview, setPreview] = useState<string | null>(null); // dataURL for preview
+    const [countdown, setCountdown] = useState<number | null>(null);
 
     useEffect(() => {
         const startCamera = async () => {
@@ -69,6 +71,9 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
+            if (countdownIntervalRef.current) {
+                clearInterval(countdownIntervalRef.current);
+            }
         };
     }, [onClose, setError]);
 
@@ -79,16 +84,37 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
     };
 
     const handleCapture = () => {
-        if (!videoRef.current) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        const context = canvas.getContext('2d');
-        if (context) {
-            context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg');
-            setPreview(dataUrl);
-        }
+        if (countdown !== null) return; // Prevent multiple countdowns
+
+        let count = 3;
+        setCountdown(count);
+
+        countdownIntervalRef.current = window.setInterval(() => {
+            count -= 1;
+            setCountdown(count > 0 ? count : null);
+
+            if (count === 0) {
+                if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current);
+                }
+
+                if (!videoRef.current) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = videoRef.current.videoWidth;
+                canvas.height = videoRef.current.videoHeight;
+                const context = canvas.getContext('2d');
+                if (context) {
+                    // Flash effect
+                    const modalContent = document.querySelector('.camera-modal-content');
+                    modalContent?.classList.add('flash-effect');
+                    setTimeout(() => modalContent?.classList.remove('flash-effect'), 300);
+
+                    context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg');
+                    setPreview(dataUrl);
+                }
+            }
+        }, 1000);
     };
 
     const handleRetake = () => {
@@ -115,6 +141,7 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
     return (
         <div className="camera-modal-overlay" onClick={onClose}>
             <div className="camera-modal-content body-scan-modal" onClick={(e) => e.stopPropagation()}>
+                {countdown && <div className="countdown-display">{countdown}</div>}
                 {preview ? (
                     <div className="scan-preview">
                         <img src={preview} alt={`${step} preview`} />
@@ -130,7 +157,7 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
                             <h3>{instructions[step].title}</h3>
                             <p>{instructions[step].guide}</p>
                         </div>
-                        <button className="capture-button" onClick={handleCapture} aria-label={`Capture ${step} view`}>
+                        <button className="capture-button" onClick={handleCapture} disabled={countdown !== null} aria-label={`Capture ${step} view`}>
                             <i className="material-icons">camera</i>
                         </button>
                     </>
