@@ -86,7 +86,7 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
     const handleCapture = () => {
         if (countdown !== null) return; // Prevent multiple countdowns
 
-        let count = 3;
+        let count = 5;
         setCountdown(count);
 
         countdownIntervalRef.current = window.setInterval(() => {
@@ -142,6 +142,15 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
         <div className="camera-modal-overlay" onClick={onClose}>
             <div className="camera-modal-content body-scan-modal" onClick={(e) => e.stopPropagation()}>
                 {countdown && <div className="countdown-display">{countdown}</div>}
+
+                <video 
+                    ref={videoRef} 
+                    autoPlay 
+                    playsInline 
+                    className="camera-video-feed"
+                    style={{ visibility: preview ? 'hidden' : 'visible' }}
+                ></video>
+
                 {preview ? (
                     <div className="scan-preview">
                         <img src={preview} alt={`${step} preview`} />
@@ -152,7 +161,6 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
                     </div>
                 ) : (
                     <>
-                        <video ref={videoRef} autoPlay playsInline className="camera-video-feed"></video>
                         <div className="scan-instructions">
                             <h3>{instructions[step].title}</h3>
                             <p>{instructions[step].guide}</p>
