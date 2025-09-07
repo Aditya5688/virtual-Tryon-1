@@ -1,0 +1,7 @@
+{
+  "name": "virtual tryon",
+  "description": "An empty app",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
