@@ -12,12 +12,6 @@ type ImageFile = { b64: string; mimeType: string; };
 type Pose = 'Standing Straight' | 'Slight 3/4 Turn' | 'Hands on Hips' | 'Walking Motion';
 type BodyType = 'Rectangle' | 'Triangle' | 'Inverted Triangle' | 'Hourglass' | 'Round';
 
-type BodyScan = {
-    front: ImageFile | null;
-    side: ImageFile | null;
-    back: ImageFile | null;
-};
-
 type SavedOutfit = {
     id: string;
     name: string;
@@ -27,7 +21,7 @@ type SavedOutfit = {
 type Profile = {
     name: string;
     faceImage: ImageFile | null;
-    bodyScans: BodyScan;
+    fullBodyImage: ImageFile | null;
     height: string;
     weight: string;
     bodyType?: BodyType;
@@ -35,173 +29,6 @@ type Profile = {
     waist?: string;
     hips?: string;
     savedOutfits: SavedOutfit[];
-};
-
-// Silhouette Guide for Body Scan
-const SilhouetteGuide = ({ step }: { step: BodyScanStep }) => {
-    // A single path for front and back view
-    const frontBackPath = "M100,20 C111,20 120,29 120,40 C120,51 111,60 100,60 C89,60 80,51 80,40 C80,29 89,20 100,20 Z M130,70 L130,180 L140,330 L110,330 L110,210 L90,210 L90,330 L60,330 L70,180 L70,70 L130,70 Z";
-    // A different path for the side view
-    const sidePath = "M100,20 C111,20 120,29 120,40 C120,51 111,60 100,60 C89,60 80,51 80,40 C80,29 89,20 100,20 Z M105,70 L105,180 Q100 185, 100 195 L105,330 L85,330 L80,195 Q80 185, 75 180 L75,70 L105,70 Z";
-    
-    const pathData = (step === 'side') ? sidePath : frontBackPath;
-
-    return (
-        <div className="scan-silhouette-overlay" aria-hidden="true">
-            <svg viewBox="0 0 200 350" preserveAspectRatio="xMidYMid meet">
-                <path d={pathData} key={step} />
-            </svg>
-        </div>
-    );
-};
-
-
-// Guided Body Scan Capture Component
-type BodyScanStep = 'front' | 'side' | 'back';
-const BodyScanCapture = ({ onComplete, onClose, setError }: {
-    onComplete: (scans: BodyScan) => void;
-    onClose: () => void;
-    setError: (error: string | null) => void;
-}) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    const countdownIntervalRef = useRef<number | null>(null);
-    const [step, setStep] = useState<BodyScanStep>('front');
-    const [images, setImages] = useState<BodyScan>({ front: null, side: null, back: null });
-    const [preview, setPreview] = useState<string | null>(null); // dataURL for preview
-    const [countdown, setCountdown] = useState<number | null>(null);
-
-    useEffect(() => {
-        const startCamera = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    streamRef.current = stream;
-                }
-            } catch (err) {
-                console.error("Camera access denied:", err);
-                setError("Camera access was denied. Please enable camera permissions in your browser settings.");
-                onClose();
-            }
-        };
-        startCamera();
-        
-        return () => {
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (countdownIntervalRef.current) {
-                clearInterval(countdownIntervalRef.current);
-            }
-        };
-    }, [onClose, setError]);
-
-    const instructions: Record<BodyScanStep, { title: string; guide: string; }> = {
-        front: { title: "Step 1/3: Front View", guide: "Face the camera and align with the guide." },
-        side: { title: "Step 2/3: Side View", guide: "Turn 90 degrees and match the silhouette." },
-        back: { title: "Step 3/3: Back View", guide: "Face away from the camera, using the overlay." },
-    };
-
-    const handleCapture = () => {
-        if (countdown !== null) return; // Prevent multiple countdowns
-
-        let count = 3;
-        setCountdown(count);
-
-        countdownIntervalRef.current = window.setInterval(() => {
-            count -= 1;
-            setCountdown(count > 0 ? count : null);
-
-            if (count === 0) {
-                if (countdownIntervalRef.current) {
-                    clearInterval(countdownIntervalRef.current);
-                }
-
-                if (!videoRef.current) return;
-                const canvas = document.createElement('canvas');
-                canvas.width = videoRef.current.videoWidth;
-                canvas.height = videoRef.current.videoHeight;
-                const context = canvas.getContext('2d');
-                if (context) {
-                    // Flash effect
-                    const modalContent = document.querySelector('.camera-modal-content');
-                    modalContent?.classList.add('flash-effect');
-                    setTimeout(() => modalContent?.classList.remove('flash-effect'), 300);
-
-                    context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL('image/jpeg');
-                    setPreview(dataUrl);
-                }
-            }
-        }, 1000);
-    };
-
-    const handleRetake = () => {
-        setPreview(null);
-    };
-
-    const handleConfirm = () => {
-        if (!preview) return;
-        const base64 = preview.split(',')[1];
-        const newImages = { ...images, [step]: { b64: base64, mimeType: 'image/jpeg' } };
-        setImages(newImages);
-        setPreview(null);
-        
-        if (step === 'front') {
-            setStep('side');
-        } else if (step === 'side') {
-            setStep('back');
-        } else if (step === 'back') {
-            onComplete(newImages);
-            onClose();
-        }
-    };
-
-    return (
-        <div className="camera-modal-overlay" onClick={onClose}>
-            <div className="camera-modal-content body-scan-modal" onClick={(e) => e.stopPropagation()}>
-                {countdown && <div className="countdown-display">{countdown}</div>}
-                
-                {!preview && <SilhouetteGuide step={step} />}
-
-                <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline 
-                    className="camera-video-feed"
-                    style={{ display: preview ? 'none' : 'block' }}
-                ></video>
-
-                {preview && (
-                    <div className="scan-preview" style={{ backgroundImage: `url(${preview})` }}>
-                        <div className="preview-actions">
-                             <button onClick={handleRetake} className="preview-action-button">
-                                <i className="material-icons">replay</i>
-                                <span>Retake</span>
-                            </button>
-                             <button onClick={handleConfirm} className="preview-action-button confirm">
-                                <i className="material-icons">check_circle</i>
-                                <span>Confirm</span>
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {!preview && (
-                    <>
-                        <div className="scan-instructions">
-                            <h3>{instructions[step].title}</h3>
-                            <p>{instructions[step].guide}</p>
-                        </div>
-                        <button className="capture-button" onClick={handleCapture} disabled={countdown !== null} aria-label={`Capture ${step} view`}>
-                            <i className="material-icons">camera</i>
-                        </button>
-                    </>
-                )}
-            </div>
-        </div>
-    );
 };
 
 // Helper for single image upload
@@ -266,7 +93,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
 }) => {
     const [name, setName] = useState(profile?.name || '');
     const [faceImage, setFaceImage] = useState<ImageFile | null>(profile?.faceImage || null);
-    const [bodyScans, setBodyScans] = useState<BodyScan>(profile?.bodyScans || { front: null, side: null, back: null });
+    const [fullBodyImage, setFullBodyImage] = useState<ImageFile | null>(profile?.fullBodyImage || null);
     const [height, setHeight] = useState(profile?.height || '');
     const [weight, setWeight] = useState(profile?.weight || '');
     const [bodyType, setBodyType] = useState<BodyType | undefined>(profile?.bodyType);
@@ -275,27 +102,20 @@ const ProfilePage = ({ profile, onSave, setPage }: {
     const [hips, setHips] = useState(profile?.hips || '');
     const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>(profile?.savedOutfits || []);
     const [localError, setLocalError] = useState<string | null>(null);
-    const [isScanning, setIsScanning] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     const handleSave = () => {
-        if (!name || !bodyScans.front || !bodyScans.side || !bodyScans.back || !height || !weight) {
-            setLocalError('Please complete your name, measurements, and the 3-angle body scan.');
+        if (!name || !fullBodyImage || !height || !weight) {
+            setLocalError('Please complete your name, measurements, and upload a full body photo.');
             return;
         }
-        onSave({ name, faceImage, bodyScans, height, weight, bodyType, chest, waist, hips, savedOutfits });
+        onSave({ name, faceImage, fullBodyImage, height, weight, bodyType, chest, waist, hips, savedOutfits });
         setPage('creator');
-    };
-
-    const handleScanComplete = (scans: BodyScan) => {
-        setBodyScans(scans);
-        setIsScanning(false);
     };
     
     const handleDeleteOutfit = (idToDelete: string) => {
         const updatedOutfits = savedOutfits.filter(outfit => outfit.id !== idToDelete);
         setSavedOutfits(updatedOutfits);
-        onSave({ name, faceImage, bodyScans, height, weight, bodyType, chest, waist, hips, savedOutfits: updatedOutfits });
+        onSave({ name, faceImage, fullBodyImage, height, weight, bodyType, chest, waist, hips, savedOutfits: updatedOutfits });
     };
 
     const bodyTypes: { name: BodyType, icon: string }[] = [
@@ -305,76 +125,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
         { name: 'Hourglass', icon: 'hourglass_empty' },
         { name: 'Round', icon: 'circle' }
     ];
-
-    const handleAnalyzeBodyType = async () => {
-        if (!bodyScans.front || !bodyScans.side || !bodyScans.back || !height || !weight) {
-            setLocalError("Please complete the body scan and provide height and weight before analyzing.");
-            return;
-        }
-        setIsAnalyzing(true);
-        setLocalError(null);
-
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-            const textPart = {
-                text: `
-Analyze the three provided body scan images (front, side, back) and the user's measurements to determine their body type. The measurements are:
-- Height: ${height} feet
-- Weight: ${weight} kilograms
-${chest ? `- Chest: ${chest} inches` : ''}
-${waist ? `- Waist: ${waist} inches` : ''}
-${hips ? `- Hips: ${hips} inches` : ''}
-
-Based on this data, classify the body shape into one of the following categories: 'Rectangle', 'Triangle', 'Inverted Triangle', 'Hourglass', 'Round'.
-
-Return the answer in a JSON object with a single key "bodyType".
-`
-            };
-            
-            const imageParts = [
-                { inlineData: { data: bodyScans.front.b64, mimeType: bodyScans.front.mimeType } },
-                { inlineData: { data: bodyScans.side.b64, mimeType: bodyScans.side.mimeType } },
-                { inlineData: { data: bodyScans.back.b64, mimeType: bodyScans.back.mimeType } },
-            ];
-
-            const schema = {
-                type: Type.OBJECT,
-                properties: {
-                    bodyType: {
-                        type: Type.STRING,
-                        enum: ['Rectangle', 'Triangle', 'Inverted Triangle', 'Hourglass', 'Round'],
-                    }
-                }
-            };
-
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
-                contents: { parts: [...imageParts, textPart] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: schema,
-                },
-            });
-
-            const result = JSON.parse(response.text);
-            const suggestedType = result.bodyType as BodyType;
-
-            if (suggestedType && bodyTypes.map(b => b.name).includes(suggestedType)) {
-                setBodyType(suggestedType);
-            } else {
-                setLocalError("The AI could not determine a body type. Please select one manually.");
-            }
-
-        } catch (e: any) {
-            console.error("AI Body Type Analysis failed:", e);
-            setLocalError("An error occurred during AI analysis. Please try again or select a type manually.");
-        } finally {
-            setIsAnalyzing(false);
-        }
-    };
     
-
     return (
         <div className="page-container profile-page">
             <header className="page-header">
@@ -403,26 +154,16 @@ Return the answer in a JSON object with a single key "bodyType".
             </div>
 
             <div className="step-card">
-                <h3>Your Body Scan</h3>
-                <p className="description">A 3-angle scan helps the AI create a perfect fit.</p>
-                <div className="body-scan-section">
-                    {(['front', 'side', 'back'] as const).map(view => (
-                        <div className="scan-slot" key={view}>
-                            {bodyScans[view] ? (
-                                <img src={`data:${bodyScans[view]!.mimeType};base64,${bodyScans[view]!.b64}`} alt={`${view} view`} />
-                            ) : (
-                                <div className="placeholder">
-                                    <i className="material-icons">person_search</i>
-                                </div>
-                            )}
-                            <div className="scan-slot-label">{view.charAt(0).toUpperCase() + view.slice(1)} View</div>
-                        </div>
-                    ))}
-                </div>
-                <button className="primary-button full-width" onClick={() => setIsScanning(true)}>
-                    <i className="material-icons">camera_alt</i>
-                    {bodyScans.front ? 'Redo Body Scan' : 'Start Body Scan'}
-                </button>
+                <h3>Your Full Body Photo</h3>
+                <p className="description">A clear photo helps the AI understand your body shape and build.</p>
+                <ImageUploader
+                    id="full-body-upload"
+                    onImageUpload={setFullBodyImage}
+                    image={fullBodyImage}
+                    title="Upload Full Body Photo"
+                    description="Drop an image or click to browse"
+                    setError={setLocalError}
+                />
             </div>
             
              <div className="step-card">
@@ -431,23 +172,6 @@ Return the answer in a JSON object with a single key "bodyType".
                 
                  <div className="body-type-header">
                      <h4>Body Type</h4>
-                     <button
-                        className="suggest-button"
-                        onClick={handleAnalyzeBodyType}
-                        disabled={!bodyScans.front || !bodyScans.side || !bodyScans.back || !height || !weight || isAnalyzing}
-                     >
-                        {isAnalyzing ? (
-                            <>
-                                <div className="spinner"></div>
-                                <span>Analyzing...</span>
-                            </>
-                        ) : (
-                            <>
-                                <i className="material-icons">auto_awesome</i>
-                                <span>Suggest for Me</span>
-                            </>
-                        )}
-                     </button>
                 </div>
                 <div className="body-type-selector">
                     {bodyTypes.map(({ name, icon }) => (
@@ -503,8 +227,6 @@ Return the answer in a JSON object with a single key "bodyType".
             )}
 
             {localError && <div className="error-message" role="alert">{localError}</div>}
-
-             {isScanning && <BodyScanCapture onComplete={handleScanComplete} onClose={() => setIsScanning(false)} setError={setLocalError} />}
 
             <div className="action-panel">
                 <button className="primary-button" onClick={handleSave}>Save Profile & Continue</button>
@@ -592,8 +314,8 @@ const App = () => {
     }, []);
 
     const handleGenerate = async () => {
-        if (!profile || !clothingImage || !profile.bodyScans.front || !profile.bodyScans.side || !profile.bodyScans.back) {
-            setError("Please complete your profile, including the 3-angle body scan, and upload a clothing image first.");
+        if (!profile || !clothingImage || !profile.fullBodyImage) {
+            setError("Please complete your profile, including a full body photo, and upload a clothing image first.");
             return;
         }
         setPage('loading');
@@ -609,27 +331,26 @@ const App = () => {
 
             const textPart = {
                 text: `
-You are an expert AI fashion stylist and virtual try-on specialist. Your task is to generate a photorealistic image of a person wearing a specific piece of clothing based on reference photos.
+You are an expert AI fashion stylist and virtual try-on specialist. Your task is to generate a highly realistic image of a specific person wearing a piece of clothing.
 
-**1. Analyze the User's Features (From Reference Images):**
-- **Body Structure Reference:** You are provided with three body scan images (front, side, back). These images are **for reference only**.
-- From these scans, meticulously analyze and understand the user's:
-    - **Body Shape:** Is it ${profile.bodyType || 'not specified'}?
-    - **Proportions:** Limb length, torso-to-leg ratio, etc.
-    - **Posture:** How they naturally stand.
-    - **Build:** How fat or slim they are.
-- **Facial Features Reference:** ${profile.faceImage ? "You are also provided with a selfie. Use this to understand the user's facial features, skin tone, and hairstyle." : "No selfie provided; generate a face that matches the general features of the person in the body scans."}
+**CRITICAL INSTRUCTIONS - Adhere to these strictly:**
+
+**1. Analyze the User's Appearance (From Reference Images):**
+- **Full Body Reference:** You are provided with a full-body photograph of the user. This is your primary reference for their exact body shape, build, and posture.
+    - **Preserve Body Shape:** You MUST replicate their body shape and proportions precisely. Pay close attention to how slim or muscular they are. **DO NOT** make the person look more muscular, bulkier, or differently shaped than they appear in their photo. The goal is an accurate representation, not an idealized one.
+- **Facial Reference:** ${profile.faceImage ? "You are also provided with a user's selfie." : "No selfie provided; generate a face that matches the person in the full body photo."}
+    - **Preserve Facial Identity:** ${profile.faceImage ? "The face in the generated image MUST be a photorealistic match to the user's selfie. Do not alter their facial features, skin tone, or hairstyle. It must look like the same person." : ""}
 
 **2. Analyze the Garment:**
-- From the clothing image, identify the item's style, cut, color, and fabric type (e.g., denim, silk, cotton, wool).
+- From the clothing image, identify the item's style, cut, color, and fabric type.
 
 **3. Core Task: Generate a NEW Photorealistic Image**
-- **DO NOT EDIT OR MODIFY the input reference images.** Your primary task is to **generate a completely new image from scratch.**
-- Create a photorealistic "digital twin" of the user based on your analysis from step 1. This new person must have the same body structure, posture, and facial features as the user in the reference photos.
-- Place this newly generated person in a **'${selectedPose}'** pose.
-- Realistically simulate and drape the analyzed garment onto this digital twin. Pay close attention to how the fabric would hang, fold, and stretch on their specific body shape.
-- The final output must be a single, full-body, high-resolution image against a clean, neutral studio background. The image must not contain any text, logos, or watermarks.
-- **Crucial Constraint:** The final generated image's pose and background **must be different** from the input body scan photos, proving it is a new creation.
+- **DO NOT EDIT the original photos.** Your task is to **generate a completely new image from scratch.**
+- Create a photorealistic "digital twin" of the user that is a perfect match to the references from step 1.
+- Place this digital twin in a **'${selectedPose}'** pose.
+- Realistically drape the provided garment onto this person. The fit, folds, and texture should be believable for their specific body shape.
+- The final output must be a single, full-body, high-resolution image against a clean, neutral studio background. The image must be free of any text or watermarks.
+- The pose and background of the final image must be different from the reference photos to prove it's a new generation.
 `
             };
             
@@ -638,9 +359,7 @@ You are an expert AI fashion stylist and virtual try-on specialist. Your task is
                 contents: {
                     parts: [
                         ...(profile.faceImage ? [{ inlineData: { data: profile.faceImage.b64, mimeType: profile.faceImage.mimeType } }] : []),
-                        { inlineData: { data: profile.bodyScans.front.b64, mimeType: profile.bodyScans.front.mimeType } },
-                        { inlineData: { data: profile.bodyScans.side.b64, mimeType: profile.bodyScans.side.mimeType } },
-                        { inlineData: { data: profile.bodyScans.back.b64, mimeType: profile.bodyScans.back.mimeType } },
+                        { inlineData: { data: profile.fullBodyImage.b64, mimeType: profile.fullBodyImage.mimeType } },
                         clothingImagePart,
                         textPart,
                     ],
