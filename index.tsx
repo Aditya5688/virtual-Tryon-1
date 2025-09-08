@@ -37,6 +37,25 @@ type Profile = {
     savedOutfits: SavedOutfit[];
 };
 
+// Silhouette Guide for Body Scan
+const SilhouetteGuide = ({ step }: { step: BodyScanStep }) => {
+    // A single path for front and back view
+    const frontBackPath = "M100,20 C111,20 120,29 120,40 C120,51 111,60 100,60 C89,60 80,51 80,40 C80,29 89,20 100,20 Z M130,70 L130,180 L140,330 L110,330 L110,210 L90,210 L90,330 L60,330 L70,180 L70,70 L130,70 Z";
+    // A different path for the side view
+    const sidePath = "M100,20 C111,20 120,29 120,40 C120,51 111,60 100,60 C89,60 80,51 80,40 C80,29 89,20 100,20 Z M105,70 L105,180 Q100 185, 100 195 L105,330 L85,330 L80,195 Q80 185, 75 180 L75,70 L105,70 Z";
+    
+    const pathData = (step === 'side') ? sidePath : frontBackPath;
+
+    return (
+        <div className="scan-silhouette-overlay" aria-hidden="true">
+            <svg viewBox="0 0 200 350" preserveAspectRatio="xMidYMid meet">
+                <path d={pathData} key={step} />
+            </svg>
+        </div>
+    );
+};
+
+
 // Guided Body Scan Capture Component
 type BodyScanStep = 'front' | 'side' | 'back';
 const BodyScanCapture = ({ onComplete, onClose, setError }: {
@@ -79,9 +98,9 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
     }, [onClose, setError]);
 
     const instructions: Record<BodyScanStep, { title: string; guide: string; }> = {
-        front: { title: "Step 1/3: Front View", guide: "Stand straight, facing the camera." },
-        side: { title: "Step 2/3: Side View", guide: "Turn 90 degrees to your side." },
-        back: { title: "Step 3/3: Back View", guide: "Turn around, facing away from the camera." },
+        front: { title: "Step 1/3: Front View", guide: "Face the camera and align with the guide." },
+        side: { title: "Step 2/3: Side View", guide: "Turn 90 degrees and match the silhouette." },
+        back: { title: "Step 3/3: Back View", guide: "Face away from the camera, using the overlay." },
     };
 
     const handleCapture = () => {
@@ -143,6 +162,8 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
         <div className="camera-modal-overlay" onClick={onClose}>
             <div className="camera-modal-content body-scan-modal" onClick={(e) => e.stopPropagation()}>
                 {countdown && <div className="countdown-display">{countdown}</div>}
+                
+                {!preview && <SilhouetteGuide step={step} />}
 
                 <video 
                     ref={videoRef} 
