@@ -588,26 +588,27 @@ const App = () => {
 
             const textPart = {
                 text: `
-You are an expert AI fashion stylist and virtual try-on specialist. Your task is to generate a photorealistic image of a person wearing a specific piece of clothing. Follow these steps meticulously:
+You are an expert AI fashion stylist and virtual try-on specialist. Your task is to generate a photorealistic image of a person wearing a specific piece of clothing based on reference photos.
 
-**Step 1: User & Garment Analysis**
-${profile.faceImage ? "- Analyze the user's selfie to accurately replicate their face and hairstyle on the generated model." : ''}
-- Analyze the user's profile: Body shape is ${profile.bodyType || 'not specified'}, height is ${profile.height} feet, weight is ${profile.weight} kilograms.
-- Analyze the three body scan images (front, side, back) to create an accurate, photorealistic digital twin of the user. Replicate their body proportions, posture, and body structure (how fat or slim they are) precisely.
-- Analyze the provided clothing image to understand its style, cut, and fabric type (e.g., denim, silk, cotton, wool).
+**1. Analyze the User's Features (From Reference Images):**
+- **Body Structure Reference:** You are provided with three body scan images (front, side, back). These images are **for reference only**.
+- From these scans, meticulously analyze and understand the user's:
+    - **Body Shape:** Is it ${profile.bodyType || 'not specified'}?
+    - **Proportions:** Limb length, torso-to-leg ratio, etc.
+    - **Posture:** How they naturally stand.
+    - **Build:** How fat or slim they are.
+- **Facial Features Reference:** ${profile.faceImage ? "You are also provided with a selfie. Use this to understand the user's facial features, skin tone, and hairstyle." : "No selfie provided; generate a face that matches the general features of the person in the body scans."}
 
-**Step 2: Advanced Fabric Physics & Clothing Simulation**
-- Based on the identified fabric, simulate its physical properties realistically.
-- **Drape:** How does the fabric hang and fold on the user's body? A silk dress will drape very differently from a denim jacket.
-- **Stretch & Fit:** How does the fabric stretch or conform to the user's body curves, especially around the chest, waist, and hips? Consider areas of tension and looseness.
-- **Texture & Lighting:** Render the fabric's texture with high fidelity. Show how light interacts with the material—is it matte like cotton, or does it have a sheen like satin?
+**2. Analyze the Garment:**
+- From the clothing image, identify the item's style, cut, color, and fabric type (e.g., denim, silk, cotton, wool).
 
-**Step 3: Image Generation**
-- Combine the digital twin and the simulated clothing.
-${profile.faceImage ? "- Crucially, the model's face must be a photorealistic representation of the person in the provided selfie." : ''}
-- Place the model in a '${selectedPose}' pose.
-- Generate a single, full-body, photorealistic image against a clean, neutral studio background.
-- The final image should be high-resolution and of fashion-magazine quality. Do not include any text, logos, or watermarks on the image.
+**3. Core Task: Generate a NEW Photorealistic Image**
+- **DO NOT EDIT OR MODIFY the input reference images.** Your primary task is to **generate a completely new image from scratch.**
+- Create a photorealistic "digital twin" of the user based on your analysis from step 1. This new person must have the same body structure, posture, and facial features as the user in the reference photos.
+- Place this newly generated person in a **'${selectedPose}'** pose.
+- Realistically simulate and drape the analyzed garment onto this digital twin. Pay close attention to how the fabric would hang, fold, and stretch on their specific body shape.
+- The final output must be a single, full-body, high-resolution image against a clean, neutral studio background. The image must not contain any text, logos, or watermarks.
+- **Crucial Constraint:** The final generated image's pose and background **must be different** from the input body scan photos, proving it is a new creation.
 `
             };
             
