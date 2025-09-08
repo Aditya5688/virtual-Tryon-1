@@ -186,6 +186,59 @@ main {
     text-align: center;
 }
 
+.body-type-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.body-type-header h4 {
+    text-align: left;
+    flex-grow: 1;
+}
+
+.suggest-button {
+  font-family: var(--font-main);
+  padding: 0.6rem 1.2rem;
+  background: none;
+  color: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0; /* Prevent button from shrinking */
+}
+.suggest-button:hover:not(:disabled) {
+  background-color: var(--accent-color);
+  color: #121212;
+}
+.suggest-button:disabled {
+  border-color: #444;
+  color: #666;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.suggest-button .material-icons {
+    font-size: 1.2rem;
+}
+
+.suggest-button .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .upload-box {
   background-color: rgba(0, 0, 0, 0.2);
   border: 2px dashed var(--border-color);
