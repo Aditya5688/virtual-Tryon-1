@@ -86,7 +86,7 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
     const handleCapture = () => {
         if (countdown !== null) return; // Prevent multiple countdowns
 
-        let count = 5;
+        let count = 3;
         setCountdown(count);
 
         countdownIntervalRef.current = window.setInterval(() => {
@@ -148,18 +148,25 @@ const BodyScanCapture = ({ onComplete, onClose, setError }: {
                     autoPlay 
                     playsInline 
                     className="camera-video-feed"
-                    style={{ visibility: preview ? 'hidden' : 'visible' }}
+                    style={{ display: preview ? 'none' : 'block' }}
                 ></video>
 
-                {preview ? (
-                    <div className="scan-preview">
-                        <img src={preview} alt={`${step} preview`} />
-                        <div className="preview-controls">
-                            <button onClick={handleRetake} className="secondary-button">Retake</button>
-                            <button onClick={handleConfirm} className="primary-button">Confirm</button>
+                {preview && (
+                    <div className="scan-preview" style={{ backgroundImage: `url(${preview})` }}>
+                        <div className="preview-actions">
+                             <button onClick={handleRetake} className="preview-action-button">
+                                <i className="material-icons">replay</i>
+                                <span>Retake</span>
+                            </button>
+                             <button onClick={handleConfirm} className="preview-action-button confirm">
+                                <i className="material-icons">check_circle</i>
+                                <span>Confirm</span>
+                            </button>
                         </div>
                     </div>
-                ) : (
+                )}
+
+                {!preview && (
                     <>
                         <div className="scan-instructions">
                             <h3>{instructions[step].title}</h3>
@@ -268,7 +275,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
     };
     
     const bodyTypes: { name: BodyType, icon: string }[] = [
-        { name: 'Rectangle', icon: 'crop_portrait' },
+        { name: 'Rectangle', icon: 'square_foot' },
         { name: 'Triangle', icon: 'change_history' },
         { name: 'Inverted Triangle', icon: 'change_history' },
         { name: 'Hourglass', icon: 'hourglass_empty' },
@@ -279,7 +286,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
         <div className="page-container profile-page">
             <header className="page-header">
                 <h2>{profile ? 'Manage Your Profile' : 'Create Your Profile'}</h2>
-                <p>{profile ? 'Update your details below.' : 'First, let\'s set up your profile.'}</p>
+                <p>{profile ? 'Update your details below.' : 'First, let\'s set up your digital twin.'}</p>
             </header>
 
             <div className="step-card">
@@ -291,7 +298,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
 
             <div className="step-card">
                 <h3>Your Body Scan</h3>
-                <p className="description" style={{ color: 'var(--secondary-text)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1rem' }}>A 3-angle scan helps the AI create a perfect fit.</p>
+                <p className="description">A 3-angle scan helps the AI create a perfect fit.</p>
                 <div className="body-scan-section">
                     {(['front', 'side', 'back'] as const).map(view => (
                         <div className="scan-slot" key={view}>
@@ -314,7 +321,7 @@ const ProfilePage = ({ profile, onSave, setPage }: {
             
              <div className="step-card">
                 <h3>Body Shape & Measurements</h3>
-                <p className="description" style={{ color: 'var(--secondary-text)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1rem' }}>Providing these details helps the AI create a more accurate fit.</p>
+                <p className="description">Providing these details helps the AI create a more accurate fit.</p>
                 
                  <h4>Body Type</h4>
                 <div className="body-type-selector">
@@ -598,7 +605,7 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                     <div className="page-container home-page">
                         <i className="material-icons icon">styler</i>
                         <h1>Welcome back, {profile?.name}!</h1>
-                        <p>Virtually try on any outfit. Upload a photo of the clothing to create your new look.</p>
+                        <p>Your digital twin is ready. Upload a photo of any clothing item to begin your virtual try-on experience.</p>
                         <div className="home-actions">
                             <button className="primary-button" onClick={() => changePage('creator')}>Create a New Look</button>
                             <button className="secondary-button" onClick={() => changePage('profile')}>View My Lookbook</button>
@@ -610,47 +617,35 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
             case 'creator':
                 const poses: Pose[] = ['Standing Straight', 'Slight 3/4 Turn', 'Hands on Hips', 'Walking Motion'];
                 return (
-                    <div className="creator-grid">
-                        <div className="creator-preview-pane">
-                            <div className="avatar-preview">
-                                {profile?.bodyScans.front && (
-                                    <img src={`data:${profile.bodyScans.front.mimeType};base64,${profile.bodyScans.front.b64}`} alt="Your silhouette" />
-                                )}
-                                <div className="avatar-overlay">Your Silhouette</div>
+                    <div className="page-container creator-page">
+                        <header className="page-header">
+                            <h2>Create Your Look</h2>
+                            <p>Follow the steps below to generate your image.</p>
+                        </header>
+                        <div className="step-card">
+                            <h3>Step 1: Upload Clothing</h3>
+                            <ImageUploader id="clothing-upload" onImageUpload={setClothingImage} image={clothingImage} title="Upload Clothing Item" description="Drop a picture here" setError={setError} />
+                        </div>
+                        <div className="step-card">
+                            <h3>Step 2: Choose a Pose</h3>
+                            <div className="pose-selection-container">
+                                {poses.map(pose => (
+                                    <button
+                                        key={pose}
+                                        className={`pose-button ${selectedPose === pose ? 'active' : ''}`}
+                                        onClick={() => setSelectedPose(pose)}
+                                    >
+                                        {pose}
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                        <div className="creator-controls-pane">
-                            <div className="page-container creator-page">
-                                <header className="page-header">
-                                    <h2>Create Your Look</h2>
-                                    <p>Follow the steps below to generate your image.</p>
-                                </header>
-                                <div className="step-card">
-                                    <h3>Step 1: Upload Clothing</h3>
-                                    <ImageUploader id="clothing-upload" onImageUpload={setClothingImage} image={clothingImage} title="Clothing Item" description="Drop a picture here" setError={setError} />
-                                </div>
-                                <div className="step-card">
-                                    <h3>Step 2: Choose a Pose</h3>
-                                    <div className="pose-selection-container">
-                                        {poses.map(pose => (
-                                            <button
-                                                key={pose}
-                                                className={`pose-button ${selectedPose === pose ? 'active' : ''}`}
-                                                onClick={() => setSelectedPose(pose)}
-                                            >
-                                                {pose}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                {error && <div className="error-message" role="alert">{error}</div>}
-                                <div className="action-panel">
-                                    <button className="primary-button generate-button" onClick={handleGenerate} disabled={!clothingImage || !profile}>
-                                        <i className="material-icons">auto_awesome</i>
-                                        Generate
-                                    </button>
-                                </div>
-                            </div>
+                        {error && <div className="error-message" role="alert">{error}</div>}
+                        <div className="action-panel">
+                            <button className="primary-button generate-button" onClick={handleGenerate} disabled={!clothingImage || !profile}>
+                                <i className="material-icons">auto_awesome</i>
+                                Generate
+                            </button>
                         </div>
                     </div>
                 );
@@ -693,7 +688,7 @@ Combine the results into a single, cohesive, photorealistic image. The person sh
                                     onClick={() => setIsSavingOutfit(true)}
                                     disabled={isOutfitSaved}
                                 >
-                                    {isOutfitSaved ? 'Saved!' : 'Add to Lookbook'}
+                                    {isOutfitSaved ? 'Saved to Lookbook!' : 'Save Look'}
                                 </button>
                             </div>
                         )}
